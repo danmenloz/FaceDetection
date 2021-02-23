@@ -2,136 +2,146 @@
 import csv
 import random
 import subprocess
-import copy
-import time
-import re
+import shutil
+from pathlib import Path
+from PIL import Image
 
-
-# faceScrub directory
-actors_file = './faceScrub/facescrub_actors.txt'
-actresses_file = './faceScrub/facescrub_actresses.txt'
+# Flags to enable download and data sets creation
+download = False
+create_dataset = True
 
 # Training and test dataset sizes
 training_size = 1000
-test_size = 10
+test_size = 100
 
-actors_list = []
-actresses_list = []
+# Image resolution
+resolution = (20,20)
 
-# Read actors' file
-with open(actors_file, newline = '') as actors:                                                                                          
-    actors_reader = csv.DictReader(actors, delimiter='\t')
-    for actor in actors_reader:
-        actors_list.append(actor)
+if download:
+    # faceScrub directory
+    actors_file = './faceScrub/facescrub_actors.txt'
+    actresses_file = './faceScrub/facescrub_actresses.txt'
 
-# Read actresses' file
-with open(actresses_file, newline = '') as actresses:                                                                                          
-    actresses_reader = csv.DictReader(actresses, delimiter='\t')
-    for actresses in actresses_reader:
-        actresses_list.append(actor)
+    actors_list = []
+    actresses_list = []
 
-# Combine and shuffle combined list
-actors_list.append(actresses_list)
-random.shuffle(actors_list)
+    # Read actors' file
+    with open(actors_file, newline = '') as actors:                                                                                          
+        actors_reader = csv.DictReader(actors, delimiter='\t')
+        for actor in actors_reader:
+            actors_list.append(actor)
 
+    # Read actresses' file
+    with open(actresses_file, newline = '') as actresses:                                                                                          
+        actresses_reader = csv.DictReader(actresses, delimiter='\t')
+        for actresses in actresses_reader:
+            actresses_list.append(actor)
 
-# img_left = copy.deepcopy(training_size)
-img_dwld = 0
+    # Combine and shuffle combined list
+    actors_list.append(actresses_list)
+    random.shuffle(actors_list)
 
-# Download test images
-test_images = []
-actors_test = []
-fail = []
-
-idx = 0 # index to download images
-while img_dwld<test_size:
-    print('idx:{}  img_dwld:{} range:({},{})\n'.format(idx,img_dwld,idx, idx+test_size-img_dwld ))
-    time.sleep(5)
-    dwld_test_images = [] 
-    for i in range(idx, idx+test_size-img_dwld ):
-        dwld_test_images.append(actors_list[i])
-        # actors_test.append(actors_list[i]['name'])
-    # actors_test = list(set(actors_test)) # remove duplicates
-
-    # Create txt source file
-    with open('test.txt', 'w', newline='') as file:
-        fieldnames = dwld_test_images[0].keys()
+    # Create source file
+    with open('download.txt', 'w', newline='') as file:
+        fieldnames = actors_list[0].keys()
         writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t')
         writer.writeheader()
-        for image in dwld_test_images:
-            writer.writerow(image)
+        for actor in actors_list:
+            try: 
+                writer.writerow(actor)
+            except:
+                print(actor)
 
     # Run fascescrub download tool
-    cmd = "python3 ./faceScrub/python3_download_facescrub.py test.txt test/ \
-        --crop_face --logfile=test.log --timeout=5 --max_retries=3"
+    cmd = "python3 ./faceScrub/python3_download_facescrub.py download.txt actors/ \
+        --crop_face --logfile=download.log --timeout=5 --max_retries=3"
     process = subprocess.Popen(cmd, stdout=subprocess.PIPE, shell=True).wait()
 
-    # Update fail log file
-    with open("test.log", "r") as log:
-        for l in log:
-            # search for sucessful download indicator
-            srch = re.search("line \d+: http",l)
 
-            # get url
-            url = re.search("(?P<url>https?://[^\s]+)", l)
 
-            if url != None and srch == None:
-                fail.append(url.group("url"))
+
+if create_dataset:
+
+    # Read download directory
+    print('Reading download folder...')
+    faces = []
+
+    for actor_entry in Path('./actors/faces/').iterdir():
+        if actor_entry.is_dir():
+            for face_entry in actor_entry.iterdir():
+                faces.append( {'name':actor_entry.name, 'face':str(face_entry)} )
+
+    for actor_entry in Path('./actors/images/').iterdir():
+        if actor_entry.is_dir():
+            for image_entry in actor_entry.iterdir():
+                # Search for dictionary and add key
+                for face in faces:
+                    if face['face'].find(image_entry.stem):
+                        face['image'] = str(image_entry)
+
+    # Shuffle list
+    random.shuffle(faces)
+
+    print('Creating test and training lists...')
+    # Create test set list
+    test_set = []
+    actors = []
+    for i in range(test_size):
+        test_set.append(faces[i])
+        actors.append(faces[i]['name'])
+    actors = list(set(actors)) # delete duplicates
+
+    # Create training set list, make sure that no actor from test set is here
+    training_set = []
+    for face in faces[test_size:]:
+        if face['name'] not in actors:
+            training_set.append(face)
+        if len(training_set) == training_size:
+            break
+
+    # Create test set directory
+    test_dir = 'data/test/'
+    print('Creating {} directory...'.format(test_dir))
+    Path(test_dir).mkdir(parents=True)
+    for face in test_set:
+        image = Image.open(face['face'])
+        print('Resizing {} '.format( str(Path(face['face']).name)) )
+        if Path(face['face']).suffix == '.png':
+            image = image.convert('RGB')
+        new_image = image.resize(resolution)
+        save_path = str(Path(test_dir) / Path(face['face']).stem) +  '.jpg'
+        new_image.save( save_path, 'JPEG')
+        face['resized'] = save_path
+
+    # Create test set directory
+    training_dir = 'data/training/'
+    print('Creating {} directory'.format(training_dir))
+    Path(training_dir).mkdir(parents=True)
+    for face in training_set:
+        image = Image.open(face['face'])
+        print('Resizing {} '.format( str(Path(face['face']).name)) )
+        if Path(face['face']).suffix == '.png':
+            image = image.convert('RGB')
+        new_image = image.resize(resolution)
+        save_path = str(Path(training_dir) / Path(face['face']).stem) +  '.jpg'
+        new_image.save( save_path, 'JPEG')
+        face['resized'] = save_path
+
+
+    # Create txt info files
+    print('Creating txt files...')
+    with open( str(Path(test_dir) / 'test.txt'), 'w', newline='') as file:
+        fieldnames = test_set[0].keys()
+        writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t')
+        writer.writeheader()
+        for face in test_set:
+            writer.writerow(face)
+
+    with open( str(Path(training_dir) / 'training.txt'), 'w', newline='') as file:
+        fieldnames = training_set[0].keys()
+        writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t')
+        writer.writeheader()
+        for face in training_set:
+            writer.writerow(face)
     
-    # Clean fail list
-    clean = []
-    for item in fail:
-        if item[-1] == ':':
-            clean.append(item[:-1])
-        else:
-            clean.append(item)
-    clean = list(set(clean)) # remove duplicates
-
-    # Append fail list to file
-    with open('fail.txt', 'a+') as file:
-        urls  = [url.strip() for url in file]
-        for item in clean:
-            if item not in urls:
-                file.write("%s\n" % item)
-                urls.append(item)
-        fail = copy.deepcopy(urls) # update fail list
-
-    # Update list
-    for i in range(idx, idx+test_size-img_dwld ):
-        if actors_list[i]['url'] not in fail:
-            test_images.append(actors_list[i])
-    
-    # Update idx to start new download
-    print('\nDownloads failed: ' + str(len(fail)))
-    idx = idx + test_size-img_dwld
-    img_dwld = img_dwld + idx-len(fail)
-
-# Final test.txt file
-with open('test.txt', 'w', newline='') as file:
-    fieldnames = test_images[0].keys()
-    writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t')
-    writer.writeheader()
-    for image in test_images:
-        writer.writerow(image)
-
-# # Create training list, make sure that no actor from test set is here
-# training_images = []
-# for actor in actors_list[test_size:]:
-#     if actor['name'] not in actors_test:
-#         training_images.append(actor)
-#     if len(training_images) == training_size:
-#         break
-
-# # Create txt source file
-# with open('training.txt', 'w', newline='') as file:
-#     fieldnames = training_images[0].keys()
-#     writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter='\t')
-#     writer.writeheader()
-#     for image in training_images:
-#         writer.writerow(image)
-
-
-
-
-
-
+    print('Datasets created sucessfully!\n')
