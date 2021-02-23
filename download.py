@@ -5,6 +5,8 @@ import subprocess
 import shutil
 from pathlib import Path
 from PIL import Image
+from random import randrange
+from tqdm import tqdm
 
 # Flags to enable download and data sets creation
 download = False
@@ -66,17 +68,17 @@ if create_dataset:
     print('Reading download folder...')
     faces = []
 
-    for actor_entry in Path('./actors/faces/').iterdir():
+    for actor_entry in tqdm(Path('./actors/faces/').iterdir(), desc ="Reading faces"):
         if actor_entry.is_dir():
             for face_entry in actor_entry.iterdir():
                 faces.append( {'name':actor_entry.name, 'face':str(face_entry)} )
 
-    for actor_entry in Path('./actors/images/').iterdir():
+    for actor_entry in tqdm(Path('./actors/images/').iterdir(), desc ="Reading images"):
         if actor_entry.is_dir():
             for image_entry in actor_entry.iterdir():
                 # Search for dictionary and add key
                 for face in faces:
-                    if face['face'].find(image_entry.stem):
+                    if face['face'].find(image_entry.stem)>=0:
                         face['image'] = str(image_entry)
 
     # Shuffle list
@@ -99,34 +101,60 @@ if create_dataset:
         if len(training_set) == training_size:
             break
 
+    def random_crop(image_path, target_size):
+        image = Image.open(image_path)
+        if Path(image_path).suffix == '.png':
+            image = image.convert('RGB')
+        img_size = image.size
+        x_max = img_size[0] - target_size[0]
+        y_max = img_size[1] - target_size[1]
+        random_x = randrange(0, x_max//2 + 1) * 2
+        random_y = randrange(0, y_max//2 + 1) * 2
+        area = (random_x, random_y, random_x + target_size[0], random_y + target_size[1])
+        c_img = image.crop(area)
+        return c_img
+
     # Create test set directory
     test_dir = 'data/test/'
     print('Creating {} directory...'.format(test_dir))
     Path(test_dir).mkdir(parents=True)
+    (Path(test_dir) / '0').mkdir()
+    (Path(test_dir) / '1').mkdir()
     for face in test_set:
-        image = Image.open(face['face'])
+        img1 = Image.open(face['face'])
         print('Resizing {} '.format( str(Path(face['face']).name)) )
         if Path(face['face']).suffix == '.png':
-            image = image.convert('RGB')
-        new_image = image.resize(resolution)
-        save_path = str(Path(test_dir) / Path(face['face']).stem) +  '.jpg'
-        new_image.save( save_path, 'JPEG')
-        face['resized'] = save_path
+            img1 = img1.convert('RGB')
+        img1 = img1.resize(resolution)
+        save_path = str(Path(test_dir) / '1' / Path(face['face']).stem ) +  '.jpg'
+        img1.save( save_path, 'JPEG')
+        face['1'] = save_path
+        img0 = random_crop(face['image'],resolution)
+        save_path = str(Path(test_dir) / '0'/ Path(face['image']).stem ) +  '.jpg'
+        img0.save( save_path, 'JPEG')
+        face['0'] = save_path
+
+
 
     # Create test set directory
     training_dir = 'data/training/'
     print('Creating {} directory'.format(training_dir))
     Path(training_dir).mkdir(parents=True)
+    (Path(training_dir) / '0').mkdir()
+    (Path(training_dir) / '1').mkdir()
     for face in training_set:
-        image = Image.open(face['face'])
+        img1 = Image.open(face['face'])
         print('Resizing {} '.format( str(Path(face['face']).name)) )
         if Path(face['face']).suffix == '.png':
-            image = image.convert('RGB')
-        new_image = image.resize(resolution)
-        save_path = str(Path(training_dir) / Path(face['face']).stem) +  '.jpg'
-        new_image.save( save_path, 'JPEG')
-        face['resized'] = save_path
-
+            img1 = img1.convert('RGB')
+        img1 = img1.resize(resolution)
+        save_path = str(Path(training_dir) / '1'/ Path(face['face']).stem) +  '.jpg'
+        img1.save( save_path, 'JPEG')
+        face['1'] = save_path
+        img0 = random_crop(face['image'],resolution)
+        save_path = str(Path(test_dir) / '0'/ Path(face['image']).stem ) +  '.jpg'
+        img0.save( save_path, 'JPEG')
+        face['0'] = save_path
 
     # Create txt info files
     print('Creating txt files...')
@@ -143,5 +171,8 @@ if create_dataset:
         writer.writeheader()
         for face in training_set:
             writer.writerow(face)
+
     
+    
+
     print('Datasets created sucessfully!\n')
