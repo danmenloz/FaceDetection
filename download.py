@@ -77,8 +77,7 @@ if create_dataset:
         if actor_entry.is_dir():
             for image_entry in actor_entry.iterdir():
                 # Search for dictionary and add key
-                face_dir = [ f for f in faces if f['name']==actor_entry.name]
-                for face in face_dir:
+                for face in faces:
                     if face['face'].find(image_entry.stem)>=0:
                         face['image'] = str(image_entry)
 
@@ -89,15 +88,23 @@ if create_dataset:
     # Create test set list
     test_set = []
     actors = []
-    for i in range(test_size):
-        test_set.append(faces[i])
-        actors.append(faces[i]['name'])
+    idx = 0
+    for face in faces:
+        idx+=1
+        # Examine image and dicard if not RGB, e.g, type L (b/w)
+        img = Image.open(face['image'])
+        if img.mode == 'RGB':
+            test_set.append(face)
+            actors.append(face['name'])
+        if len(test_set) == test_size:
+            break
     actors = list(set(actors)) # delete duplicates
 
     # Create training set list, make sure that no actor from test set is here
     training_set = []
-    for face in faces[test_size:]:
-        if face['name'] not in actors:
+    for face in faces[idx:]:
+        img = Image.open(face['image'])
+        if face['name'] not in actors and img.mode == 'RGB':
             training_set.append(face)
         if len(training_set) == training_size:
             break
@@ -153,7 +160,7 @@ if create_dataset:
         img1.save( save_path, 'JPEG')
         face['1'] = save_path
         img0 = random_crop(face['image'],resolution)
-        save_path = str(Path(test_dir) / '0'/ Path(face['image']).stem ) +  '.jpg'
+        save_path = str(Path(training_dir) / '0'/ Path(face['image']).stem ) +  '.jpg'
         img0.save( save_path, 'JPEG')
         face['0'] = save_path
 
