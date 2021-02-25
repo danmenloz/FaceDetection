@@ -77,7 +77,8 @@ if create_dataset:
         if actor_entry.is_dir():
             for image_entry in actor_entry.iterdir():
                 # Search for dictionary and add key
-                for face in faces:
+                face_dir = [ f for f in faces if f['name']==actor_entry.name]
+                for face in face_dir:
                     if face['face'].find(image_entry.stem)>=0:
                         face['image'] = str(image_entry)
 
@@ -123,7 +124,7 @@ if create_dataset:
     for face in test_set:
         img1 = Image.open(face['face'])
         print('Resizing {} '.format( str(Path(face['face']).name)) )
-        if Path(face['face']).suffix == '.png':
+        if Path(face['face']).suffix != '.jpg' or Path(face['face']).suffix != '.jpeg':
             img1 = img1.convert('RGB')
         img1 = img1.resize(resolution)
         save_path = str(Path(test_dir) / '1' / Path(face['face']).stem ) +  '.jpg'
@@ -145,7 +146,7 @@ if create_dataset:
     for face in training_set:
         img1 = Image.open(face['face'])
         print('Resizing {} '.format( str(Path(face['face']).name)) )
-        if Path(face['face']).suffix == '.png':
+        if Path(face['face']).suffix != '.jpg' or Path(face['face']).suffix != '.jpeg':
             img1 = img1.convert('RGB')
         img1 = img1.resize(resolution)
         save_path = str(Path(training_dir) / '1'/ Path(face['face']).stem) +  '.jpg'
